@@ -1,10 +1,10 @@
-# Те же синие обои в стиле PS5, что и на планшете, но под экран компьютера 2560x1440.
+# Те же синие обои в стиле PS5, что и на планшете, но под экран компьютера (размер берётся из config).
 # Квадратный SVG из make_ps.py растягивается на весь экран с обрезкой краёв (slice).
 import os
 from make_ps import wall_svg, shot, BUILD
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-W, H = 2560, 1440
+from config import SCREEN_W as W, SCREEN_H as H  # обои под настоящий размер экрана
 
 def main():
     os.makedirs(BUILD, exist_ok=True)

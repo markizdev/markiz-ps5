@@ -10,7 +10,7 @@ from make_ps import tile_svg, shot, BUILD, PX
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
 ICO_DIR = os.path.join(os.environ["LOCALAPPDATA"], "FolderIconsPS")
-SKIN = os.path.join(HOME, "Documents", "Rainmeter", "Skins", "MarkizPS")
+from config import SKIN  # папка скинов Rainmeter этого компьютера
 SM_USER = os.path.join(os.environ["APPDATA"], r"Microsoft\Windows\Start Menu\Programs")
 SM_ALL = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"
 

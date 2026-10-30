@@ -7,7 +7,7 @@ import os, shutil
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKIN = os.path.join(os.path.expanduser("~"), "Documents", "Rainmeter", "Skins", "MarkizPS")
+from config import SKIN  # папка скинов Rainmeter этого компьютера
 RES = os.path.join(SKIN, "@Resources")
 def steam_root():
     """Где установлен Steam: Steam сам пишет путь в реестр; если не нашли — стандартная папка"""
@@ -23,14 +23,12 @@ def steam_root():
 
 STEAM = steam_root()
 LIB = os.path.join(STEAM, "appcache", "librarycache")
-MAX_STEAM = 8  # сколько последних Steam-игр показывать в ряду
+from config import MAX_STEAM, SCREEN_W as RW, SCREEN_H as RH, NAME, CITY, CITY_LABEL, scale_ini, found_apps  # настройки.txt
 # Не игры: библиотеки Steamworks, Wallpaper Engine, Proton/Steam Linux Runtime, SteamVR
 SKIP_APPS = {228980, 431960, 1070560, 1391110, 1628350, 1493710, 250820}
 ICONS = os.path.join(HERE, "ps_build", "exeicons")
-W, H = 2560, 1440
+W, H = 2560, 1440  # главный экран рисуется в этих координатах, потом scale_ini подгоняет его под экран (RW x RH)
 # Имя для приветствия и подсказки на аватаре: первое слово имени пользователя Windows
-import getpass
-NAME = getpass.getuser().split()[0]
 T = 112        # плитка в покое
 TS = 160       # плитка под мышкой (выбранная)
 GAP = 22
@@ -57,6 +55,13 @@ MEDIA = [
     ("Проводник", "t7", "explorer.exe"),
     ("Настройки", "t8", "ms-settings:"),
 ]
+# Ярлыки, которых нет на этом компьютере, не показываем (ссылки и системные команды есть всегда)
+MEDIA = [m for m in MEDIA if not m[2].lower().endswith(".lnk") or os.path.exists(m[2])]
+
+# Если запускали установщик — берём игры и лаунчеры, которые он нашёл у этого человека, вместо списка автора
+_found = found_apps()
+if _found is not None:
+    EXTRA = [(a["key"], a["name"], None, a["key"], ("#2a3f6e", "#0c1636"), a["run"], None) for a in _found.get("extra", [])]
 
 def find(appid, name):
     for root, _, files in os.walk(os.path.join(LIB, str(appid))):
@@ -151,15 +156,15 @@ def hero(appid):
     """Фон 2560x1440: картинка игры, затемнённая слева и снизу, как на PS5"""
     src = find(appid, "library_hero.jpg")
     im = Image.open(src).convert("RGB")
-    k = max(W / im.width, H / im.height); im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1), Image.LANCZOS)
-    im = im.crop(((im.width - W) // 2, (im.height - H) // 2, (im.width - W) // 2 + W, (im.height - H) // 2 + H)).convert("RGBA")
-    sh = Image.new("RGBA", (W, H)); d = ImageDraw.Draw(sh)
-    for x in range(W):  # слева тёмно-синяя дымка, где текст и плитки
-        a = int(220 * max(0, 1 - x / (W * .7)) ** 1.4); d.line([(x, 0), (x, H)], fill=(2, 8, 30, a))
+    k = max(RW / im.width, RH / im.height); im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1), Image.LANCZOS)
+    im = im.crop(((im.width - RW) // 2, (im.height - RH) // 2, (im.width - RW) // 2 + RW, (im.height - RH) // 2 + RH)).convert("RGBA")
+    sh = Image.new("RGBA", (RW, RH)); d = ImageDraw.Draw(sh)
+    for x in range(RW):  # слева тёмно-синяя дымка, где текст и плитки
+        a = int(220 * max(0, 1 - x / (RW * .7)) ** 1.4); d.line([(x, 0), (x, RH)], fill=(2, 8, 30, a))
     im.alpha_composite(sh)
-    sh = Image.new("RGBA", (W, H)); d = ImageDraw.Draw(sh)
-    for y in range(H):
-        a = int(150 * max(0, (y - H * .55) / (H * .45))) + int(120 * max(0, 1 - y / (H * .25))); d.line([(0, y), (W, y)], fill=(2, 8, 30, min(255, a)))
+    sh = Image.new("RGBA", (RW, RH)); d = ImageDraw.Draw(sh)
+    for y in range(RH):
+        a = int(150 * max(0, (y - RH * .55) / (RH * .45))) + int(120 * max(0, 1 - y / (RH * .25))); d.line([(0, y), (RW, y)], fill=(2, 8, 30, min(255, a)))
     im.alpha_composite(sh)
     return im.convert("RGB")
 
@@ -203,7 +208,7 @@ MaxValue=100
 
 [mWeather]
 Measure=WebParser
-URL=https://wttr.in/Nizhny+Novgorod?format=%t|%C|Нижний Новгород&lang=ru
+URL=https://wttr.in/{CITY}?format=%t|%C|{CITY_LABEL}&lang=ru
 CodePage=65001
 RegExp=(?siU)^\\s*(.*)\\|(.*)\\|(.*)\\s*$
 UpdateRate=1800
@@ -240,6 +245,7 @@ Formula=(mVol < 0) ? 1 : 0
 RegExpSubstitute=1
 Substitute="^0$":"","^1$":""
 """
+MEASURES = MEASURES.replace("{CITY}", CITY).replace("{CITY_LABEL}", CITY_LABEL)  # город из настройки.txt
 DISKS = [d for d in "CDE" if os.path.exists(d + ":\\")]
 for d in DISKS:
     MEASURES += f"""
@@ -746,15 +752,15 @@ DynamicVariables=1
 
 [Bg]
 Meter=Shape
-Shape=Rectangle 0,0,{W},{H} | Fill RadialGradient G | StrokeWidth 0
+Shape=Rectangle 0,0,{RW},{RH} | Fill RadialGradient G | StrokeWidth 0
 G=0,0 | 18,48,120,(#A#) ; 0.0 | 2,6,22,(#A#) ; 1.0
 DynamicVariables=1
 
 [Logo]
 Meter=String
 Text=MARKIZ
-X={W // 2}
-Y={H // 2 - 40}
+X={RW // 2}
+Y={RH // 2 - 40}
 StringAlign=CenterCenter
 FontFace=Segoe UI Light
 FontSize=96
@@ -766,8 +772,8 @@ DynamicVariables=1
 [Hello]
 Meter=String
 Text=Добро пожаловать, {NAME}
-X={W // 2}
-Y={H // 2 + 70}
+X={RW // 2}
+Y={RH // 2 + 70}
 StringAlign=CenterCenter
 FontFace=Segoe UI
 FontSize=22
@@ -804,8 +810,8 @@ DynamicVariables=1
 [Bg]
 Meter=Image
 ImageName=
-W={W}
-H={H}
+W={RW}
+H={RH}
 PreserveAspectRatio=2
 ImageAlpha=#A#
 DynamicVariables=1
@@ -965,7 +971,7 @@ Group=Games
 DynamicVariables=1
 LeftMouseUpAction=["#Run#"][Play "#@#sounds\\select.wav"]
 """)
-    open(os.path.join(SKIN, "Home", "Home.ini"), "w", encoding="utf-16").write("".join(ini))
+    open(os.path.join(SKIN, "Home", "Home.ini"), "w", encoding="utf-16").write(scale_ini("".join(ini)))
     print(SKIN, len(GAMES), "games")
 
 if __name__ == "__main__":

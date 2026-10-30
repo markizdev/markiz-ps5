@@ -5,9 +5,9 @@ import os
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKIN = os.path.join(os.path.expanduser("~"), "Documents", "Rainmeter", "Skins", "MarkizPS")
+from config import SKIN  # папка скинов Rainmeter этого компьютера
 ICONS = os.path.join(HERE, "ps_build", "dockicons")
-SCREEN_W, SCREEN_H = 2560, 1440
+from config import SCREEN_W, SCREEN_H, SC, scale_ini, found_apps  # экран и программы этого компьютера
 B, GAP, PAD, HGT = 64, 14, 18, 96   # кнопка, промежуток, поля, высота панели
 
 # (ключ иконки, подпись, AppID для shell:AppsFolder)
@@ -20,6 +20,12 @@ APPS = [
     ("claude", "Claude", "Claude_pzs8sxrjxfjjc!Claude"),
     ("terminal", "Терминал", "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"),
 ]
+# Если запускали установщик — его список программ этого компьютера; без иконки кнопку не ставим
+_found = found_apps()
+if _found is not None:
+    APPS = [(a["key"], a["name"], a["appid"]) for a in _found.get("dock", [])]
+APPS = [a for a in APPS if os.path.exists(os.path.join(ICONS, a[0] + ".png"))]
+
 # (секция, глиф Segoe Fluent Icons, подсказка, действие)
 CONTROLS = [
     ("CNet", "", "Сеть", '["ms-availablenetworks:"]'),
@@ -47,7 +53,8 @@ def main():
     w_left = n_btn * B + (n_btn - 1) * GAP
     w_right = 4 * 56 + 3 * 10 + 150             # громкость, сеть, уведомления, питание + время
     W = PAD * 2 + w_left + 40 + w_right
-    x0 = (SCREEN_W - W) // 2; y0 = SCREEN_H - HGT - 18
+    # панель рисуется в размерах для 2560x1440, scale_ini подгоняет её под экран — позицию считаем уже в настоящих пикселях
+    x0 = int((SCREEN_W - W * SC) // 2); y0 = int(SCREEN_H - (HGT + 18) * SC)
     yb = (HGT - B) // 2
 
     def hover(sec, shape_on, shape_off):
@@ -223,7 +230,7 @@ FontSize=12
 FontColor=200,220,255,220
 AntiAlias=1
 """
-    open(os.path.join(SKIN, "Dock", "Dock.ini"), "w", encoding="utf-16").write(ini)
+    open(os.path.join(SKIN, "Dock", "Dock.ini"), "w", encoding="utf-16").write(scale_ini(ini))
     print(x0, y0, W)
 
 if __name__ == "__main__":
