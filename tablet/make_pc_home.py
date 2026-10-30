@@ -61,7 +61,9 @@ MEDIA = [m for m in MEDIA if not m[2].lower().endswith(".lnk") or os.path.exists
 # Если запускали установщик — берём игры и лаунчеры, которые он нашёл у этого человека, вместо списка автора
 _found = found_apps()
 if _found is not None:
-    EXTRA = [(a["key"], a["name"], None, a["key"], ("#2a3f6e", "#0c1636"), a["run"], None) for a in _found.get("extra", [])]
+    EXTRA = [(a["key"], a["name"], None, a["key"], ("#2a3f6e", "#0c1636"), a["run"], a.get("cover")) for a in _found.get("extra", [])]
+# своя игра с «steam:номер плашка» в настройках: плитка — обложка той Steam-игры с плашкой, фон — её же
+COVERS = {a["key"]: (a["cover"], a.get("badge", "")) for a in (_found or {}).get("extra", []) if a.get("cover")}
 
 def find(appid, name):
     for root, _, files in os.walk(os.path.join(LIB, str(appid))):
@@ -148,13 +150,16 @@ def game_tile(g):
         w, h = cover.size  # квадрат из верхней части обложки — там обычно лицо/логотип
         cover = cover.crop((0, int(h * .08), w, int(h * .08) + w)).resize((300, 300), Image.LANCZOS)
         return rounded(cover, 44)
-    gta = next((x for x in GAMES if x[2] == 3240220), None)
-    if key == "gta5rp" and gta:  # обложка GTA V с плашкой RP (если GTA V есть в Steam)
-        t = game_tile(gta).copy(); d = ImageDraw.Draw(t)
-        d.rounded_rectangle((150, 222, 286, 286), 18, fill=(255, 140, 40, 255))
-        from PIL import ImageFont
-        f = ImageFont.truetype(r"C:\Windows\Fonts\segoeuib.ttf", 46)
-        d.text((218, 254), "RP", font=f, fill="white", anchor="mm")
+    # обложка другой Steam-игры с плашкой: из настройки.txt («steam:3240220 RP») или старый gta5rp автора
+    cover_id, badge = COVERS.get(key, (3240220, "RP") if key == "gta5rp" else (None, ""))
+    if cover_id and find(cover_id, "library_600x900.jpg"):
+        t = game_tile((key, "", cover_id, None, None, "", None)).copy()
+        if badge:
+            from PIL import ImageFont
+            d = ImageDraw.Draw(t); f = ImageFont.truetype(r"C:\Windows\Fonts\segoeuib.ttf", 46)
+            w = int(d.textlength(badge, font=f)) + 40
+            d.rounded_rectangle((286 - w, 222, 286, 286), 18, fill=(255, 140, 40, 255))
+            d.text((286 - w // 2, 254), badge, font=f, fill="white", anchor="mm")
         return t
     if key == "fortnite":  # иконка игры и так квадратная на всю плитку
         return rounded(Image.open(os.path.join(ICONS, icon + ".png")).convert("RGB").resize((300, 300), Image.LANCZOS), 44)

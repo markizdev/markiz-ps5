@@ -143,6 +143,8 @@ foreach ($line in [IO.File]::ReadAllLines($Settings)) {
     if ($p.Count -lt 2 -or -not $p[0] -or -not $p[1]) { Warn "Не понял строку: $line"; continue }
     $key = "my$i"; $i++
     $iconSrc = if ($p.Count -ge 3 -and $p[2]) { $p[2] } else { $p[1] }
+    # «steam:3240220 RP» — взять обложку и фон Steam-игры с этим номером и подписать плашкой «RP»
+    if ($iconSrc -match '^steam:(\d+)\s*(.*)$') { $extra += @{ key = $key; name = $p[0]; run = $p[1]; cover = [int]$Matches[1]; badge = $Matches[2] }; continue }
     if ($iconSrc -match '^[a-zA-Z]:\\' -and -not (Test-Path $iconSrc)) { Warn "$($p[0]): не нашёл $iconSrc — пропускаю"; continue }
     if ($iconSrc -match '^[a-zA-Z]:\\') { $extraIcons[$key] = $iconSrc } else { Warn "$($p[0]): иконку не из файла не достать — будут буквы названия" }
     $extra += @{ key = $key; name = $p[0]; run = $p[1] }
