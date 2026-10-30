@@ -9,7 +9,23 @@ from PIL import Image, ImageDraw, ImageFilter
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKIN = os.path.join(os.path.expanduser("~"), "Documents", "Rainmeter", "Skins", "MarkizPS")
 RES = os.path.join(SKIN, "@Resources")
-LIB = r"C:\Program Files (x86)\Steam\appcache\librarycache"
+def steam_root():
+    """Где установлен Steam: Steam сам пишет путь в реестр; если не нашли — стандартная папка"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as k:
+            p = os.path.normpath(winreg.QueryValueEx(k, "SteamPath")[0])
+            if os.path.isdir(p):
+                return p
+    except OSError:
+        pass
+    return r"C:\Program Files (x86)\Steam"
+
+STEAM = steam_root()
+LIB = os.path.join(STEAM, "appcache", "librarycache")
+MAX_STEAM = 8  # сколько последних Steam-игр показывать в ряду
+# Не игры: библиотеки Steamworks, Wallpaper Engine, Proton/Steam Linux Runtime, SteamVR
+SKIP_APPS = {228980, 431960, 1070560, 1391110, 1628350, 1493710, 250820}
 ICONS = os.path.join(HERE, "ps_build", "exeicons")
 W, H = 2560, 1440
 # Имя для приветствия и подсказки на аватаре: первое слово имени пользователя Windows
@@ -21,11 +37,10 @@ GAP = 22
 X0, Y0 = 150, 150
 
 # (id, подпись, steam appid или None, иконка exe или None, цвет плитки, что запускать, фон взять у appid)
-GAMES = [
-    ("steam", "Магазин Steam", None, "steam", ("#2a475e", "#171a21"), "steam://store", None),  # первая плитка, как магазин на консоли
-    ("cs2", "Counter-Strike 2", 730, None, None, "steam://rungameid/730", 730),
-    ("fh5", "Forza Horizon 5", 1551360, None, None, "steam://rungameid/1551360", 1551360),
-    ("gta5", "GTA V", 3240220, None, None, "steam://rungameid/3240220", 3240220),
+# Steam-игры находятся сами (steam_games ниже); здесь — магазин и игры не из Steam.
+# Игра не из Steam попадёт в ряд, только если её иконка лежит в ps_build/exeicons (см. extract_icons.ps1).
+STORE = ("steam", "Магазин Steam", None, "steam", ("#2a475e", "#171a21"), "steam://store", None)  # первая плитка, как магазин на консоли
+EXTRA = [
     ("gta5rp", "GTA5RP", None, "gta5rp", ("#ff9a3d", "#b8360c"), r"C:\Program Files (x86)\GTA5RP\GTA5RPLauncher.exe", 3240220),
     ("fortnite", "Fortnite", None, "fortnite", None, "com.epicgames.launcher://apps/Fortnite?action=launch&silent=true", None),
     ("tlou", "The Last of Us", None, "tlou", ("#5fa36a", "#1f4d2b"), r"E:\The last of Us. Part 1\Launcher.exe", None),
@@ -47,6 +62,47 @@ def find(appid, name):
     for root, _, files in os.walk(os.path.join(LIB, str(appid))):
         if name in files:
             return os.path.join(root, name)
+
+def steam_games():
+    """Все установленные Steam-игры со всех дисков (libraryfolders.vdf + appmanifest_*.acf), у которых есть обложка в кэше"""
+    import re
+    libs = {STEAM}
+    vdf = os.path.join(STEAM, "steamapps", "libraryfolders.vdf")
+    if os.path.exists(vdf):
+        txt = open(vdf, encoding="utf-8", errors="ignore").read()
+        libs |= {os.path.normpath(p.replace("\\\\", "\\")) for p in re.findall(r'"path"\s+"([^"]+)"', txt)}
+    out, seen = [], set()
+    for lib in libs:
+        sa = os.path.join(lib, "steamapps")
+        if not os.path.isdir(sa):
+            continue
+        for f in os.listdir(sa):
+            if not (f.startswith("appmanifest_") and f.endswith(".acf")):
+                continue
+            txt = open(os.path.join(sa, f), encoding="utf-8", errors="ignore").read()
+            m_id, m_name = re.search(r'"appid"\s+"(\d+)"', txt), re.search(r'"name"\s+"([^"]+)"', txt)
+            if not (m_id and m_name):
+                continue
+            appid = int(m_id.group(1))
+            if appid in SKIP_APPS or appid in seen or not find(appid, "library_600x900.jpg"):
+                continue  # не игра, дубль или Steam ещё не скачал обложку
+            seen.add(appid)
+            hero_id = appid if find(appid, "library_hero.jpg") else None
+            out.append((f"s{appid}", m_name.group(1), appid, None, None, f"steam://rungameid/{appid}", hero_id))
+    return out
+
+def extra_games():
+    """Игры не из Steam — только те, у которых есть иконка; фон у чужого appid берём, только если он есть в кэше"""
+    out = []
+    for g in EXTRA:
+        if g[3] and not os.path.exists(os.path.join(ICONS, g[3] + ".png")):
+            continue
+        hero_id = g[6] if g[6] and find(g[6], "library_hero.jpg") else None
+        out.append(g[:6] + (hero_id,))
+    return out
+
+HAS_STORE = os.path.exists(os.path.join(ICONS, "steam.png"))  # плитке магазина нужна иконка Steam
+GAMES = ([STORE] if HAS_STORE else []) + steam_games() + extra_games()
 
 def rounded(im, r):
     m = Image.new("L", im.size, 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, im.size[0] - 1, im.size[1] - 1), r, fill=255)
@@ -72,8 +128,9 @@ def game_tile(g):
         w, h = cover.size  # квадрат из верхней части обложки — там обычно лицо/логотип
         cover = cover.crop((0, int(h * .08), w, int(h * .08) + w)).resize((300, 300), Image.LANCZOS)
         return rounded(cover, 44)
-    if key == "gta5rp":  # обложка GTA V с плашкой RP
-        t = game_tile(next(x for x in GAMES if x[0] == "gta5")).copy(); d = ImageDraw.Draw(t)
+    gta = next((x for x in GAMES if x[2] == 3240220), None)
+    if key == "gta5rp" and gta:  # обложка GTA V с плашкой RP (если GTA V есть в Steam)
+        t = game_tile(gta).copy(); d = ImageDraw.Draw(t)
         d.rounded_rectangle((150, 222, 286, 286), 18, fill=(255, 140, 40, 255))
         from PIL import ImageFont
         f = ImageFont.truetype(r"C:\Windows\Fonts\segoeuib.ttf", 46)
@@ -82,7 +139,7 @@ def game_tile(g):
     if key == "fortnite":  # иконка игры и так квадратная на всю плитку
         return rounded(Image.open(os.path.join(ICONS, icon + ".png")).convert("RGB").resize((300, 300), Image.LANCZOS), 44)
     if key == "mc":  # у лаунчера крошечная иконка — рисуем свою плитку с буквами
-        t = grad_tile(*cols, "steam"); t = Image.new("RGBA", t.size); d = ImageDraw.Draw(t)
+        t = Image.new("RGBA", (300, 300)); d = ImageDraw.Draw(t)
         a, b = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in cols]
         for y in range(300): k = y / 299; d.line([(0, y), (300, y)], fill=tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3)) + (255,))
         from PIL import ImageFont
@@ -622,7 +679,7 @@ def sort_recent():
                 m = re.search(r'"%d"\s*\{[^{}]*?"LastPlayed"\s*"(\d+)"' % g[2], txt)
                 if m: last[g[0]] = max(last.get(g[0], 0), int(m.group(1)))
     store = [g for g in GAMES if g[0] == "steam"]
-    steam = sorted((g for g in GAMES if g[2]), key=lambda g: -last.get(g[0], 0))
+    steam = sorted((g for g in GAMES if g[2]), key=lambda g: -last.get(g[0], 0))[:MAX_STEAM]
     rest = [g for g in GAMES if not g[2] and g[0] != "steam"]
     GAMES[:] = store + steam + rest
 
@@ -755,7 +812,7 @@ DynamicVariables=1
 """)
 
     # --- Home.ini
-    DEF = 1  # при запуске выбрана последняя игра, в которую играли (сразу после магазина)
+    DEF = min(1 if HAS_STORE else 0, len(GAMES) - 1)  # при запуске выбрана последняя игра, в которую играли (сразу после магазина)
     card_images(gdir)
     sounds(os.path.join(RES, "sounds"))
     ini = [f"""[Rainmeter]
