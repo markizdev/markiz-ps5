@@ -100,7 +100,8 @@ def extra_games():
     """Игры не из Steam — только те, у которых есть иконка; фон у чужого appid берём, только если он есть в кэше"""
     out = []
     for g in EXTRA:
-        if g[3] and not os.path.exists(os.path.join(ICONS, g[3] + ".png")):
+        # свои игры из настройки.txt (ключ my*) показываем и без иконки — с буквами названия
+        if g[3] and not g[0].startswith("my") and not os.path.exists(os.path.join(ICONS, g[3] + ".png")):
             continue
         hero_id = g[6] if g[6] and find(g[6], "library_hero.jpg") else None
         out.append(g[:6] + (hero_id,))
@@ -120,7 +121,8 @@ def grad_tile(c1, c2, icon, label=""):
     d = ImageDraw.Draw(t)
     for y in range(S):
         k = y / (S - 1); d.line([(0, y), (S, y)], fill=tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3)) + (255,))
-    ic = Image.open(os.path.join(ICONS, icon + ".png")).convert("RGBA")
+    path = os.path.join(ICONS, icon + ".png")
+    ic = Image.open(path).convert("RGBA") if os.path.exists(path) else Image.new("RGBA", (8, 8), (0, 0, 0, 255))  # нет иконки — будут буквы
     ic = ic.crop(ic.getbbox())  # у некоторых exe внутри только маленькая иконка с пустыми полями
     # Значок «пустой», если почти всё одного цвета или настоящий рисунок занимает крошечную часть в центре
     from PIL import ImageChops

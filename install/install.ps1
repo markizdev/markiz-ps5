@@ -65,6 +65,12 @@ Ok "Библиотеки готовы"
 
 # ---------- 2. Настройки ----------
 Step 2 "Настройки"
+if ((Test-Path $Settings) -and -not $City) {
+    Ok "Беру твои настройки из настройки.txt"  # при повторном запуске ничего не спрашиваем и ничего не затираем
+} elseif (Test-Path $Settings) {
+    $t = [IO.File]::ReadAllLines($Settings) -replace '^\s*ГОРОД\s*=.*$', "ГОРОД = $City" -replace '^\s*ГОРОД_ПОДПИСЬ\s*=.*$', "ГОРОД_ПОДПИСЬ = $City"
+    [IO.File]::WriteAllLines($Settings, $t, (New-Object Text.UTF8Encoding $true)); Ok "Город: $City"
+} else {
 $city = if ($City) { $City } else { Read-Host "  Твой город для погоды (например: Москва, Kazan). Enter — Москва" }
 if (-not $city) { $city = "Москва" }
 $lines = @(
@@ -81,10 +87,19 @@ $lines = @(
     "ИГР_ИЗ_STEAM = 8",
     "",
     "# Имя в приветствии: «авто» — имя пользователя Windows",
-    "ИМЯ = авто"
+    "ИМЯ = авто",
+    "",
+    "# Свои игры (не из Steam). Каждая — отдельной строкой:",
+    "#   ИГРА = название | что запускать | откуда взять иконку (необязательно)",
+    "# Что запускать — путь к .exe или ярлыку .lnk, либо ссылка вида steam://, com.epicgames.launcher:// и т. п.",
+    "# Иконка — путь к .exe или .lnk; если не указать, возьмётся из того, что запускаем.",
+    "# Примеры (убери # в начале, чтобы включить):",
+    "# ИГРА = Fortnite | com.epicgames.launcher://apps/Fortnite?action=launch&silent=true | C:\Program Files\Epic Games\Fortnite\FortniteGame\Binaries\Win64\FortniteLauncher.exe",
+    "# ИГРА = Моя игра | D:\Games\MyGame\Game.exe"
 )
 [IO.File]::WriteAllLines($Settings, $lines, (New-Object Text.UTF8Encoding $true))
 Ok "Сохранил в настройки.txt"
+}
 
 # ---------- 3. Игры и программы этого компьютера ----------
 Step 3 "Ищу игры, лаунчеры и программы"
@@ -120,6 +135,18 @@ $dockWanted = @(
     @("firefox", "Firefox", "^Firefox$")
 )
 $extraIcons = @{}; $dockIcons = @{}; $extra = @(); $dock = @()
+# свои игры из настройки.txt идут первыми после Steam
+$i = 0
+foreach ($line in [IO.File]::ReadAllLines($Settings)) {
+    if ($line -notmatch '^\s*ИГРА\s*=\s*(.+)$') { continue }
+    $p = $Matches[1] -split '\s*\|\s*'
+    if ($p.Count -lt 2 -or -not $p[0] -or -not $p[1]) { Warn "Не понял строку: $line"; continue }
+    $key = "my$i"; $i++
+    $iconSrc = if ($p.Count -ge 3 -and $p[2]) { $p[2] } else { $p[1] }
+    if ($iconSrc -match '^[a-zA-Z]:\\' -and -not (Test-Path $iconSrc)) { Warn "$($p[0]): не нашёл $iconSrc — пропускаю"; continue }
+    if ($iconSrc -match '^[a-zA-Z]:\\') { $extraIcons[$key] = $iconSrc } else { Warn "$($p[0]): иконку не из файла не достать — будут буквы названия" }
+    $extra += @{ key = $key; name = $p[0]; run = $p[1] }
+}
 foreach ($l in $launchers) {
     $a = Find-App $l[2]
     if ($a) { $extraIcons[$l[0]] = "shell:AppsFolder\$($a.AppID)"; $extra += @{ key = $l[0]; name = $l[1]; run = "shell:AppsFolder\$($a.AppID)" } }
