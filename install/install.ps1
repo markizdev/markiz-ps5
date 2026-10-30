@@ -1,5 +1,7 @@
 ﻿# Установщик MARKIZ PS5: ставит нужные программы, находит игры и программы этого компьютера,
 # рисует оформление и включает его в Rainmeter. Запускается через УСТАНОВИТЬ.bat.
+# Без вопросов: install.ps1 -City "Казань" -Yes
+param([string]$City, [switch]$Yes)
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $Tablet = Join-Path $Root "tablet"
@@ -42,7 +44,7 @@ if ($need.Count -gt 0) {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Warn "Нет winget. Поставь эти программы вручную и запусти установщик ещё раз."; exit 1
     }
-    $ans = Read-Host "  Установить их сейчас с официальных сайтов? (Д/Н)"
+    $ans = if ($Yes) { "Д" } else { Read-Host "  Установить их сейчас с официальных сайтов? (Д/Н)" }
     if ($ans -notmatch "^[ДдYy]") { Warn "Без них оформление не заработает. Выход."; exit 1 }
     foreach ($n in $need) {
         Write-Host "  Ставлю $($n.name)..."
@@ -63,7 +65,7 @@ Ok "Библиотеки готовы"
 
 # ---------- 2. Настройки ----------
 Step 2 "Настройки"
-$city = Read-Host "  Твой город для погоды (например: Москва, Kazan). Enter — Москва"
+$city = if ($City) { $City } else { Read-Host "  Твой город для погоды (например: Москва, Kazan). Enter — Москва" }
 if (-not $city) { $city = "Москва" }
 $lines = @(
     "# Настройки MARKIZ PS5. После изменений запусти УСТАНОВИТЬ.bat ещё раз.",
@@ -88,7 +90,8 @@ Ok "Сохранил в настройки.txt"
 Step 3 "Ищу игры, лаунчеры и программы"
 New-Item -ItemType Directory -Force $Build | Out-Null
 $start = Get-StartApps
-function Find-App($pattern) { $start | Where-Object { $_.Name -match $pattern } | Select-Object -First 1 }
+# ярлыки-ссылки на сайты (AppID вида https://...) пропускаем — у них иконка браузера, а не программы
+function Find-App($pattern) { $start | Where-Object { $_.Name -match $pattern -and $_.AppID -notmatch "^https?:" } | Select-Object -First 1 }
 
 # лаунчеры и игры не из Steam: (ключ, подпись, по какому названию искать в меню «Пуск»)
 $launchers = @(
@@ -108,11 +111,13 @@ $dockWanted = @(
     @("discord", "Discord", "^Discord$"),
     @("chrome", "Chrome", "^Google Chrome$"),
     @("yandex", "Яндекс", "^(Yandex|Яндекс)$"),
-    @("edge", "Edge", "^Microsoft Edge$"),
-    @("firefox", "Firefox", "^Firefox$"),
     @("spotify", "Spotify", "^Spotify"),
     @("explorer", "Проводник", "^(Проводник|File Explorer)$"),
-    @("terminal", "Терминал", "^(Терминал|Terminal)$")
+    @("claude", "Claude", "^Claude$"),
+    @("terminal", "Терминал", "^(Терминал|Terminal)$"),
+    # браузеры на случай, если нет ни Chrome, ни Яндекса
+    @("edge", "Edge", "^Microsoft Edge$"),
+    @("firefox", "Firefox", "^Firefox$")
 )
 $extraIcons = @{}; $dockIcons = @{}; $extra = @(); $dock = @()
 foreach ($l in $launchers) {
@@ -126,6 +131,7 @@ foreach ($d in $dockWanted) {
 }
 # Steam: путь из реестра, нужен для плитки «Магазин Steam»
 $steamExe = (Get-ItemProperty "HKCU:\Software\Valve\Steam" -ErrorAction SilentlyContinue).SteamExe
+if ($steamExe) { $steamExe = [IO.Path]::GetFullPath($steamExe) }  # Steam пишет путь с «/», а иконки достаются только по пути с «\»
 if ($steamExe -and (Test-Path $steamExe)) { $extraIcons["steam"] = $steamExe; Ok "Steam найден: игры из него подтянутся сами" }
 else { Warn "Steam не найден — ряд игр будет без Steam" }
 

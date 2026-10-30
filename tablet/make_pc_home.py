@@ -113,7 +113,7 @@ def rounded(im, r):
     m = Image.new("L", im.size, 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, im.size[0] - 1, im.size[1] - 1), r, fill=255)
     im = im.convert("RGBA"); im.putalpha(m); return im
 
-def grad_tile(c1, c2, icon):
+def grad_tile(c1, c2, icon, label=""):
     S = 300
     t = Image.new("RGBA", (S, S))
     a, b = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (c1, c2)]
@@ -122,6 +122,19 @@ def grad_tile(c1, c2, icon):
         k = y / (S - 1); d.line([(0, y), (S, y)], fill=tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3)) + (255,))
     ic = Image.open(os.path.join(ICONS, icon + ".png")).convert("RGBA")
     ic = ic.crop(ic.getbbox())  # у некоторых exe внутри только маленькая иконка с пустыми полями
+    # Значок «пустой», если почти всё одного цвета или настоящий рисунок занимает крошечную часть в центре
+    from PIL import ImageChops
+    rgb = ic.convert("RGB"); q = rgb.resize((64, 64)).quantize(8).histogram()
+    inner = rgb.crop((rgb.width // 8, rgb.height // 8, rgb.width * 7 // 8, rgb.height * 7 // 8))
+    diff = ImageChops.difference(inner, Image.new("RGB", inner.size, inner.getpixel((1, 1)))).convert("L").point(lambda v: 255 if v > 40 else 0)
+    box = diff.getbbox()
+    tiny = not box or (box[2] - box[0]) * (box[3] - box[1]) < 0.12 * inner.width * inner.height
+    if label and (max(q) / sum(q) > 0.85 or tiny):
+        # иконка почти одноцветная (крошечный значок в рамке) — вместо неё пишем буквы названия
+        from PIL import ImageFont
+        letters = "".join(w[0] for w in label.split()[:2]).upper() or label[:2].upper()
+        d.text((S // 2, S // 2), letters, font=ImageFont.truetype(r"C:\Windows\Fonts\seguibl.ttf", 120), fill="white", anchor="mm")
+        return rounded(t, 44)
     ic = ic.resize((170, 170), Image.NEAREST if ic.width < 64 else Image.LANCZOS)
     t.alpha_composite(ic, ((S - 170) // 2, (S - 170) // 2))
     return rounded(t, 44)
@@ -150,7 +163,7 @@ def game_tile(g):
         from PIL import ImageFont
         d.text((150, 150), "MC", font=ImageFont.truetype(r"C:\Windows\Fonts\seguibl.ttf", 120), fill="white", anchor="mm")
         return rounded(t, 44)
-    return grad_tile(*cols, icon)
+    return grad_tile(*cols, icon, g[1])
 
 def hero(appid):
     """Фон 2560x1440: картинка игры, затемнённая слева и снизу, как на PS5"""
