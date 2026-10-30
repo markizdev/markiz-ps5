@@ -1,0 +1,20 @@
+Свой значок на кнопке «Пуск» вместо значка Windows.
+Картинку (PNG, лучше квадратную с прозрачным фоном) положи в C:\Users\Public\Pictures\start_pad.png —
+в путь без пробелов, иначе панель задач её не загрузит.
+
+Мод Windhawk: Windows 11 Taskbar Styler -> Настройки -> Control styles -> добавить 2 элемента:
+
+1) Target:
+Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Grid > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon, Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon
+   Styles:
+Visibility=Collapsed
+
+2) Target:
+Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel
+   Styles (каждая строка — отдельный пункт):
+Background:=<ImageBrush Stretch="Uniform" ImageSource="file:///C:/Users/Public/Pictures/start_pad.png" />
+Padding=0
+MinWidth=40
+MinHeight=40
+
+Сохранить (Save settings). Чтобы вернуть значок Windows — выключить мод или удалить эти 2 элемента.
