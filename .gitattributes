@@ -1,0 +1,6 @@
+# Одинаковые переводы строк у всех: скрипты Windows — CRLF, остальное — как в репозитории
+* text=auto
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
