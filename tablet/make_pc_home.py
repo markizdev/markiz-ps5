@@ -3,7 +3,7 @@
 #  Home.ini  — вкладки «Игры / Медиа», ряд плиток, логотип выбранной игры и кнопка «Играть»
 # Картинки игр берутся из кэша Steam на этом компьютере, для остальных — иконка exe на цветной плитке
 # (иконки достаёт PowerShell в ps_build/exeicons). Плитки «Медиа» — из make_pc_ps.py (@Resources/tiles/t*.png).
-import os, shutil
+import os, re, shutil
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +23,7 @@ def steam_root():
 
 STEAM = steam_root()
 LIB = os.path.join(STEAM, "appcache", "librarycache")
-from config import MAX_STEAM, SCREEN_W as RW, SCREEN_H as RH, NAME, CITY, CITY_LABEL, scale_ini, found_apps  # настройки.txt
+from config import MAX_STEAM, SCREEN_W as RW, SCREEN_H as RH, NAME, CITY, CITY_LABEL, SC, scale_ini, found_apps  # настройки.txt
 # Не игры: библиотеки Steamworks, Wallpaper Engine, Proton/Steam Linux Runtime, SteamVR
 SKIP_APPS = {228980, 431960, 1070560, 1391110, 1628350, 1493710, 250820}
 ICONS = os.path.join(HERE, "ps_build", "exeicons")
@@ -187,6 +187,11 @@ def hero(appid):
         a = int(150 * max(0, (y - RH * .55) / (RH * .45))) + int(120 * max(0, 1 - y / (RH * .25))); d.line([(0, y), (RW, y)], fill=(2, 8, 30, min(255, a)))
     im.alpha_composite(sh)
     return im.convert("RGB")
+
+def shift_xy(text, dx, dy):
+    """Сдвинуть абсолютные X=/Y= (просто числа) — для скинов, которые стоят не в углу экрана"""
+    text = re.sub(r"^X=(-?\d+)$", lambda m: f"X={int(m.group(1)) + dx}", text, flags=re.M)
+    return re.sub(r"^Y=(-?\d+)$", lambda m: f"Y={int(m.group(1)) + dy}", text, flags=re.M)
 
 def act_select(i, g, has_logo, has_hero):
     key, name, *_ = g
@@ -814,17 +819,17 @@ Information=Фон выбранной игры на весь экран
 [Variables]
 A=0
 
-; Плавное появление (1) и исчезновение (2) фона, 12 шагов по 25 мс
+; Плавное появление (1) и исчезновение (2) фона, 8 шагов по 30 мс
 [mFade]
 Measure=Plugin
 Plugin=ActionTimer
-ActionList1=Stop2 | SetZero | Repeat Up,25,12
-ActionList2=Stop1 | Repeat Down,25,12
+ActionList1=Stop2 | SetZero | Repeat Up,30,8
+ActionList2=Stop1 | Repeat Down,30,8
 Stop1=[!CommandMeasure mFade "Stop 1"]
 Stop2=[!CommandMeasure mFade "Stop 2"]
 SetZero=[!SetVariable A 0][!UpdateMeter Bg][!Redraw]
-Up=[!SetVariable A "(Clamp(#A#+22,0,255))"][!UpdateMeter Bg][!Redraw]
-Down=[!SetVariable A "(Clamp(#A#-22,0,255))"][!UpdateMeter Bg][!Redraw]
+Up=[!SetVariable A "(Clamp(#A#+32,0,255))"][!UpdateMeter Bg][!Redraw]
+Down=[!SetVariable A "(Clamp(#A#-32,0,255))"][!UpdateMeter Bg][!Redraw]
 DynamicVariables=1
 
 [Bg]
@@ -832,7 +837,6 @@ Meter=Image
 ImageName=
 W={RW}
 H={RH}
-PreserveAspectRatio=2
 ImageAlpha=#A#
 DynamicVariables=1
 """)
@@ -842,7 +846,7 @@ DynamicVariables=1
     card_images(gdir)
     sounds(os.path.join(RES, "sounds"))
     ini = [f"""[Rainmeter]
-Update=1000
+Update=-1
 AccurateText=1
 OnRefreshAction={sel[DEF]}
 
@@ -855,13 +859,13 @@ Font=Segoe UI
 Run=
 Cur=-1
 K=0
-{MEASURES}
-; Плавное увеличение плитки под мышкой: 6 шагов по 16 мс, в конце — белая рамка
+
+; Плавное увеличение плитки под мышкой: 4 шага по 20 мс, в конце — белая рамка
 [mGrow]
 Measure=Plugin
 Plugin=ActionTimer
-ActionList1=Repeat Step,16,6 | Ring
-Step=[!SetVariable K "(Clamp(#K#+1,0,6))"][!UpdateMeterGroup Games][!UpdateMeterGroup Media][!Redraw]
+ActionList1=Repeat Step,20,4 | Ring
+Step=[!SetVariable K "(Clamp(#K#+1,0,4))"][!UpdateMeterGroup Games][!UpdateMeterGroup Media][!Redraw]
 Ring=[!ShowMeter Ring][!UpdateMeter Ring][!Redraw]
 DynamicVariables=1
 
@@ -898,8 +902,8 @@ LeftMouseUpAction=[!SetOption TabMedia FontColor "255,255,255,255"][!SetOption T
         uid = i + (100 if group == "Media" else 0)   # номер плитки для анимации (у «Медиа» свои)
         over_extra = f'[Play "#@#sounds\\move.wav"][!SetOption SelName X {x - d}][!SetOption SelName Y {y - d + TS + 14}][!SetOption SelName Text "{label}"]' + over_extra
         run = f'"{run}"][Play "#@#sounds\\select.wav"'  # звук запуска после команды: LeftMouseUpAction=["путь"][Play ...]
-        # Плитка плавно растёт за 6 шагов: K идёт 0..6 у плитки с номером Cur, остальные стоят в покое
-        k = f"(#K#/6*(#Cur#={uid}))"
+        # Плитка плавно растёт за 4 шага: K идёт 0..4 у плитки с номером Cur, остальные стоят в покое
+        k = f"(#K#/4*(#Cur#={uid}))"
         return f"""
 [{sec}]
 Meter=Image
@@ -921,7 +925,6 @@ LeftMouseUpAction=[{run}]
     for i, (label, t, run) in enumerate(MEDIA):
         img = f"#@#tiles\\{t}.png" if t else "#@#games\\youtube.png"
         ini.append(tile(f"M{i}", img, i, "Media", f'[!SetOption Name Text "{label}"][!HideMeter Logo][!ShowMeter Name]', run, 1, label))
-    ini.append(header() + cards())
     ini.append(f"""
 [Ring]
 Meter=Shape
@@ -992,6 +995,37 @@ DynamicVariables=1
 LeftMouseUpAction=["#Run#"][Play "#@#sounds\\select.wav"]
 """)
     open(os.path.join(SKIN, "Home", "Home.ini"), "w", encoding="utf-16").write(scale_ini("".join(ini)))
+
+    # Шапка (время, поиск, настройки, аватар) и карточки — отдельные небольшие скины.
+    # Rainmeter перерисовывает окно скина целиком, поэтому маленькие окна обновляются в разы быстрее одного на весь экран.
+    TOP_X, CARDS_Y = W - 720, 600
+    top = f"""[Rainmeter]
+Update=1000
+AccurateText=1
+
+[Metadata]
+Name=MARKIZ PS Top
+Information=Шапка: поиск, настройки, профиль и время
+
+[mTime]
+Measure=Time
+Format=%H:%M
+""" + shift_xy(header(), -TOP_X, 0)
+    cards_ini = f"""[Rainmeter]
+Update=2000
+AccurateText=1
+
+[Metadata]
+Name=MARKIZ PS Cards
+Information=Карточки: система, погода, диски, MARKIZ LAND, Steam, время в играх, звук и питание
+{MEASURES}""" + shift_xy(cards(), 0, -CARDS_Y)
+    for name, text in (("Top", top), ("Cards", cards_ini)):
+        os.makedirs(os.path.join(SKIN, name), exist_ok=True)
+        open(os.path.join(SKIN, name, name + ".ini"), "w", encoding="utf-16").write(scale_ini(text))
+    # где поставить скины на экране (в настоящих пикселях) — читает установщик
+    import json
+    pos = {"MarkizPS\\Top": [round(TOP_X * SC), 0], "MarkizPS\\Cards": [0, round(CARDS_Y * SC)]}
+    json.dump(pos, open(os.path.join(HERE, "ps_build", "positions.json"), "w"))
     print(SKIN, len(GAMES), "games")
 
 if __name__ == "__main__":

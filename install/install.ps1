@@ -188,11 +188,14 @@ Ok "Оформление нарисовано"
 Step 5 "Включаю главный экран и нижнюю панель в Rainmeter"
 if (-not (Get-Process Rainmeter -ErrorAction SilentlyContinue)) { Start-Process $rmExe; Start-Sleep 5 }
 $ini = "$env:APPDATA\Rainmeter\Rainmeter.ini"
+$pos = Get-Content (Join-Path $Build "positions.json") -Raw | ConvertFrom-Json  # где стоят шапка и карточки (пишет make_pc_home.py)
 # (скин, слой: -2 на рабочем столе / 2 поверх всего, сквозной для мыши, X, Y)
 $skins = @(
     @("MarkizPS\Hero", "Hero.ini", -2, 1, 0, 0),
     @("MarkizPS\Home", "Home.ini", -2, 0, 0, 0),
     @("MarkizPS\Dock", "Dock.ini", -2, 0, $dockPos[0], $dockPos[1]),
+    @("MarkizPS\Top", "Top.ini", -2, 0, $pos.'MarkizPS\Top'[0], $pos.'MarkizPS\Top'[1]),
+    @("MarkizPS\Cards", "Cards.ini", -2, 0, $pos.'MarkizPS\Cards'[0], $pos.'MarkizPS\Cards'[1]),
     @("MarkizPS\Splash", "Splash.ini", 2, 1, 0, 0)
 )
 & $rmExe !RefreshApp; Start-Sleep 3

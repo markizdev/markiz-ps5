@@ -6,7 +6,7 @@ $rmExe = "$env:ProgramFiles\Rainmeter\Rainmeter.exe"
 Write-Host "MARKIZ PS5 — удаление оформления" -ForegroundColor Cyan
 
 if (Test-Path $rmExe) {
-    foreach ($c in "MarkizPS\Hero", "MarkizPS\Home", "MarkizPS\Dock", "MarkizPS\Splash", "MarkizPS\Clock") { & $rmExe !DeactivateConfig $c }
+    foreach ($c in "MarkizPS\Hero", "MarkizPS\Home", "MarkizPS\Dock", "MarkizPS\Splash", "MarkizPS\Clock", "MarkizPS\Top", "MarkizPS\Cards") { & $rmExe !DeactivateConfig $c }
     Write-Host "  + Скины в Rainmeter выключены" -ForegroundColor Green
 }
 

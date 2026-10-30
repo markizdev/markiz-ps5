@@ -84,13 +84,13 @@ def scale_ini(text):
     if abs(SC - 1) < 1e-3:
         return text
     keep = {}
-    def protect(m):  # числа внутри формул анимации плиток (#K#/6, #Cur#=101) — не размеры
+    def protect(m):  # числа внутри формул анимации плиток (#K#/4, #Cur#=101) — не размеры
         n, tag = len(keep), ""
         while True:  # метка из одних букв, чтобы масштабирование цифр её не задело
             tag = chr(65 + n % 26) + tag; n //= 26
             if not n: break
         tag = f"@@{tag}@@"; keep[tag] = m.group(0); return tag
-    text = re.sub(r"#K#/6|#Cur#=\d+|Clamp\([^)]*\)", protect, text)
+    text = re.sub(r"#K#/\d|#Cur#=\d+|Clamp\([^)]*\)", protect, text)
     text = _GEOM_KEYS.sub(lambda m: f"{m.group(1)}={_scale_nums(m.group(2))}", text)
     text = re.sub(r"^(Shape\d*)=(.*)$", lambda m: f"{m.group(1)}={_scale_shape(m.group(2))}", text, flags=re.M)
     text = re.sub(r'(!SetOption \S+ (?:X|Y|W|H) )(-?\d+)', lambda m: m.group(1) + _scale_nums(m.group(2)), text)
