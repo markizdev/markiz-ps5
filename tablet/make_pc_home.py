@@ -639,6 +639,7 @@ FontSize=11
 FontColor=210,225,255,230
 AntiAlias=1
 """
+    if pt:  # строки «Время в играх» — один раз, после кнопок питания
         mx = pt[0][1]
         for i, (name, h) in enumerate(pt):
             yy = y2 + 170 + 72 + i * 44
@@ -711,7 +712,7 @@ def playtime():
     import re
     tot = {}
     ud = os.path.join(os.path.dirname(LIB), "..", "userdata")
-    for acc in os.listdir(ud):
+    for acc in (os.listdir(ud) if os.path.isdir(ud) else []):  # нет Steam — нет и данных об играх
         f = os.path.join(ud, acc, "config", "localconfig.vdf")
         if not os.path.exists(f): continue
         txt = open(f, encoding="utf-8", errors="ignore").read()
@@ -726,7 +727,7 @@ def sort_recent():
     import re
     last = {}
     ud = os.path.join(os.path.dirname(LIB), "..", "userdata")
-    for acc in os.listdir(ud):
+    for acc in (os.listdir(ud) if os.path.isdir(ud) else []):  # нет Steam — нет и данных об играх
         f = os.path.join(ud, acc, "config", "localconfig.vdf")
         if not os.path.exists(f): continue
         txt = open(f, encoding="utf-8", errors="ignore").read()
@@ -758,7 +759,9 @@ def card_images(gdir):
     im = Image.open(os.path.join(HERE, "markiz_night.png")).convert("RGB")
     im = im.crop((300, 820, 1700, 1450)).resize((1160, 520), Image.LANCZOS)
     rounded(im, 28).save(os.path.join(gdir, "markiz_card.png"))
-    st = Image.open(find(1551360, "library_hero.jpg")).convert("RGB")
+    # для магазина — большая картинка Forza, а если её нет — любой другой игры из ряда, иначе синий фон оформления
+    src = find(1551360, "library_hero.jpg") or next((find(g[6], "library_hero.jpg") for g in GAMES if g[6]), None)
+    st = Image.open(src or os.path.join(HERE, "markiz_blue_pc.png")).convert("RGB")
     k = 520 / st.height; st = st.resize((int(st.width * k), 520), Image.LANCZOS)
     st = st.crop((st.width - 760, 0, st.width, 520))
     rounded(st, 28).save(os.path.join(gdir, "store_card.png"))
