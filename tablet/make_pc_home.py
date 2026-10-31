@@ -172,12 +172,26 @@ def game_tile(g):
         return rounded(t, 44)
     return grad_tile(*cols, icon, g[1])
 
+def cover_fit(im):
+    """Растянуть картинку на весь экран RW x RH с обрезкой по краям"""
+    k = max(RW / im.width, RH / im.height); im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1), Image.LANCZOS)
+    return im.crop(((im.width - RW) // 2, (im.height - RH) // 2, (im.width - RW) // 2 + RW, (im.height - RH) // 2 + RH))
+
 def hero(appid):
     """Фон 2560x1440: картинка игры, затемнённая слева и снизу, как на PS5"""
-    src = find(appid, "library_hero.jpg")
-    im = Image.open(src).convert("RGB")
-    k = max(RW / im.width, RH / im.height); im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1), Image.LANCZOS)
-    im = im.crop(((im.width - RW) // 2, (im.height - RH) // 2, (im.width - RW) // 2 + RW, (im.height - RH) // 2 + RH)).convert("RGBA")
+    return shade(cover_fit(Image.open(find(appid, "library_hero.jpg")).convert("RGB")))
+
+def hero_blur(tile):
+    """Фон для игры без большой картинки в Steam: её плитка, сильно размытая на весь экран — цветное свечение, как на PS5"""
+    bg = Image.new("RGB", tile.size, (6, 14, 44)); bg.paste(tile, mask=tile.getchannel("A"))
+    small = bg.crop((20, 20, bg.width - 20, bg.height - 20)).resize((64, 36), Image.LANCZOS)  # размываем маленькую — так быстро
+    from PIL import ImageEnhance
+    small = ImageEnhance.Color(small.filter(ImageFilter.GaussianBlur(6))).enhance(1.7)  # сочнее, иначе после размытия цвет сереет
+    im = Image.blend(small.resize((RW, RH), Image.BICUBIC), Image.new("RGB", (RW, RH), (6, 14, 44)), .35)
+    return shade(im)
+
+def shade(im):
+    im = im.convert("RGBA")
     sh = Image.new("RGBA", (RW, RH)); d = ImageDraw.Draw(sh)
     for x in range(RW):  # слева тёмно-синяя дымка, где текст и плитки
         a = int(220 * max(0, 1 - x / (RW * .7)) ** 1.4); d.line([(x, 0), (x, RH)], fill=(2, 8, 30, a))
@@ -193,7 +207,7 @@ def shift_xy(text, dx, dy):
     text = re.sub(r"^X=(-?\d+)$", lambda m: f"X={int(m.group(1)) + dx}", text, flags=re.M)
     return re.sub(r"^Y=(-?\d+)$", lambda m: f"Y={int(m.group(1)) + dy}", text, flags=re.M)
 
-def act_select(i, g, has_logo, has_hero):
+def act_select(i, g, has_logo):
     key, name, *_ = g
     run = g[5].replace('"', "")
     a = [f'[!SetVariable Run "{run}"]', f'[!SetOption Name Text "{name}"]']
@@ -201,11 +215,8 @@ def act_select(i, g, has_logo, has_hero):
         a += [f'[!SetOption Logo ImageName "#@#games\\{key}_logo.png"]', "[!ShowMeter Logo]", "[!HideMeter Name]"]
     else:
         a += ["[!HideMeter Logo]", "[!ShowMeter Name]"]
-    # фон меняется плавно: Hero.ini проявляет новую картинку (Execute 1) или растворяет её до синих волн (Execute 2)
-    if has_hero:
-        a += [f'[!SetOption Bg ImageName "#@#games\\{key}_hero.jpg" "MarkizPS\\Hero"]', '[!CommandMeasure mFade "Execute 1" "MarkizPS\\Hero"]']
-    else:
-        a += ['[!CommandMeasure mFade "Execute 2" "MarkizPS\\Hero"]']
+    # фон меняется плавно: Hero.ini чуть ждёт (если мышь просто пробегает по плиткам — не мигает) и проявляет картинку
+    a += [f'[!SetVariable Img "#@#games\\{key}_hero.jpg" "MarkizPS\\Hero"]', '[!CommandMeasure mFade "Stop 1" "MarkizPS\\Hero"]', '[!CommandMeasure mFade "Execute 1" "MarkizPS\\Hero"]']
     a += ["[!UpdateMeter *]", "[!Redraw]"]
     return "".join(a)
 
@@ -664,22 +675,36 @@ AntiAlias=1
     return out
 
 def sounds(sdir):
-    """Свои тихие звуки интерфейса: короткий «тик» при наведении и мягкий двойной тон при запуске"""
+    """Свои звуки интерфейса (синтез, без чужих записей): стеклянный «тик» при наведении, тише и ниже — вкладки,
+    звонкий двойной тон при запуске игры и мягкий аккорд-заставка при входе в Windows. Лёгкое эхо — для объёма."""
     import math, struct, wave
     os.makedirs(sdir, exist_ok=True)
-    def tone(parts, path, vol):
-        rate = 44100; data = []
-        for f0, f1, ms in parts:
-            n = int(rate * ms / 1000)
-            for i in range(n):
-                t = i / rate; f = f0 + (f1 - f0) * i / n
-                env = min(1, i / (rate * .003)) * math.exp(-5 * i / n)  # быстрая атака, мягкое затухание
-                data.append(int(32767 * vol * env * (math.sin(2 * math.pi * f * t) + .25 * math.sin(4 * math.pi * f * t))))
-        with wave.open(path, "wb") as w:
+    rate = 44100
+    def note(f, start, dur, vol, decay, length):
+        """Нота: основной тон + обертоны (звучит как стекло/колокольчик), быстрая атака, затухание"""
+        out = [0.0] * length; s0 = int(start * rate)
+        for i in range(min(int(dur * rate), length - s0)):
+            t = i / rate; env = min(1, t / .004) * math.exp(-decay * t)
+            out[s0 + i] = vol * env * (math.sin(2 * math.pi * f * t) + .3 * math.sin(2 * math.pi * 2 * f * t) * math.exp(-8 * t)
+                                       + .12 * math.sin(2 * math.pi * 3.01 * f * t) * math.exp(-14 * t))
+        return out
+    def save(name, notes, total, echo=.22, peak=.5):
+        n = int(total * rate); data = [0.0] * n
+        for args in notes:
+            for i, v in enumerate(note(*args, n)): data[i] += v
+        d = int(.07 * rate)  # эхо 70 мс, затухает
+        for i in range(d, n): data[i] += echo * data[i - d]
+        m = max(abs(v) for v in data) or 1; k = peak / m
+        fade = int(.02 * rate)
+        for i in range(fade): data[n - 1 - i] *= i / fade
+        with wave.open(os.path.join(sdir, name), "wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
-            w.writeframes(b"".join(struct.pack("<h", max(-32767, min(32767, s))) for s in data))
-    tone([(1500, 1300, 45)], os.path.join(sdir, "move.wav"), .10)
-    tone([(880, 900, 90), (1320, 1340, 160)], os.path.join(sdir, "select.wav"), .16)
+            w.writeframes(b"".join(struct.pack("<h", int(32767 * v * k)) for v in data))
+    save("move.wav", [(2093, 0, .12, 1, 38)], .16, peak=.16)                                  # до 7-й октавы, очень коротко
+    save("tab.wav", [(1397, 0, .14, 1, 30)], .18, peak=.14)                                   # фа, ниже и мягче
+    save("select.wav", [(1047, 0, .3, 1, 9), (1568, .07, .45, 1, 7)], .6, peak=.3)           # до → соль, вверх
+    save("boot.wav", [(262, 0, 2.6, .8, 1.3), (392, .12, 2.5, .7, 1.4), (523, .24, 2.4, .6, 1.5),
+                      (659, .4, 2.2, .45, 1.7), (1047, .6, 1.8, .25, 2.2)], 2.8, echo=.35, peak=.35)  # мягкий аккорд до мажор
 
 def playtime():
     """Часы в Steam-играх: суммируем Playtime (минуты) по всем аккаунтам из localconfig.vdf"""
@@ -746,11 +771,11 @@ def main():
     sel = []
     for g in GAMES:
         key, appid, heroid = g[0], g[2], g[6]
-        game_tile(g).save(os.path.join(gdir, key + ".png"))
+        tile = game_tile(g); tile.save(os.path.join(gdir, key + ".png"))
         logo = find(appid, "logo.png") if appid else (find(heroid, "logo.png") if heroid else None)
         if logo: shutil.copy(logo, os.path.join(gdir, key + "_logo.png"))
-        if heroid: hero(heroid).save(os.path.join(gdir, key + "_hero.jpg"), quality=90)
-        sel.append(act_select(len(sel), g, bool(logo), bool(heroid)))
+        (hero(heroid) if heroid else hero_blur(tile)).save(os.path.join(gdir, key + "_hero.jpg"), quality=90)
+        sel.append(act_select(len(sel), g, bool(logo)))
     yt = Image.open(os.path.join(HERE, "ps_build", "icons", "com.gbox.com.google.android.youtube.png")).convert("RGBA").resize((300, 300), Image.LANCZOS)
     yt.save(os.path.join(gdir, "youtube.png"))
 
@@ -758,7 +783,7 @@ def main():
     os.makedirs(os.path.join(SKIN, "Splash"), exist_ok=True)
     open(os.path.join(SKIN, "Splash", "Splash.ini"), "w", encoding="utf-16").write(f"""[Rainmeter]
 Update=-1
-OnRefreshAction=[!Show][!CommandMeasure mOut "Execute 1"]
+OnRefreshAction=[!Show][Play "#@#sounds\\boot.wav"][!CommandMeasure mOut "Execute 1"]
 
 [Metadata]
 Name=MARKIZ PS Splash
@@ -818,23 +843,25 @@ Information=Фон выбранной игры на весь экран
 
 [Variables]
 A=0
+Img=
 
-; Плавное появление (1) и исчезновение (2) фона, 8 шагов по 30 мс
+; Появление (1): ждём 120 мс — если мышь уже ушла на другую плитку, Home запустит заново и картинка не мигнёт зря;
+; потом новая картинка проявляется за 6 шагов. Исчезновение до синих волн (2) — для вкладки «Медиа».
 [mFade]
 Measure=Plugin
 Plugin=ActionTimer
-ActionList1=Stop2 | SetZero | Repeat Up,30,8
-ActionList2=Stop1 | Repeat Down,30,8
+ActionList1=Stop2 | Wait 120 | SetZero | Repeat Up,30,6
+ActionList2=Stop1 | Repeat Down,30,6
 Stop1=[!CommandMeasure mFade "Stop 1"]
 Stop2=[!CommandMeasure mFade "Stop 2"]
 SetZero=[!SetVariable A 0][!UpdateMeter Bg][!Redraw]
-Up=[!SetVariable A "(Clamp(#A#+32,0,255))"][!UpdateMeter Bg][!Redraw]
-Down=[!SetVariable A "(Clamp(#A#-32,0,255))"][!UpdateMeter Bg][!Redraw]
+Up=[!SetVariable A "(Clamp(#A#+43,0,255))"][!UpdateMeter Bg][!Redraw]
+Down=[!SetVariable A "(Clamp(#A#-43,0,255))"][!UpdateMeter Bg][!Redraw]
 DynamicVariables=1
 
 [Bg]
 Meter=Image
-ImageName=
+ImageName=#Img#
 W={RW}
 H={RH}
 ImageAlpha=#A#
@@ -881,7 +908,7 @@ StringEffect=Shadow
 FontEffectColor=0,0,0,120
 AntiAlias=1
 SolidColor=0,0,0,1
-LeftMouseUpAction=[!SetOption TabGames FontColor "255,255,255,255"][!SetOption TabMedia FontColor "255,255,255,130"][!ShowMeterGroup Games][!HideMeterGroup Media]{sel[DEF]}
+LeftMouseUpAction=[!SetOption TabGames FontColor "255,255,255,255"][!SetOption TabMedia FontColor "255,255,255,130"][!ShowMeterGroup Games][!HideMeterGroup Media][Play "#@#sounds\\tab.wav"]{sel[DEF]}
 
 [TabMedia]
 Meter=String
@@ -895,7 +922,7 @@ StringEffect=Shadow
 FontEffectColor=0,0,0,120
 AntiAlias=1
 SolidColor=0,0,0,1
-LeftMouseUpAction=[!SetOption TabMedia FontColor "255,255,255,255"][!SetOption TabGames FontColor "255,255,255,130"][!HideMeterGroup Games][!ShowMeterGroup Media][!CommandMeasure mFade "Execute 2" "MarkizPS\\Hero"][!UpdateMeter *][!Redraw]
+LeftMouseUpAction=[!SetOption TabMedia FontColor "255,255,255,255"][!SetOption TabGames FontColor "255,255,255,130"][!HideMeterGroup Games][!ShowMeterGroup Media][Play "#@#sounds\\tab.wav"][!CommandMeasure mFade "Execute 2" "MarkizPS\\Hero"][!UpdateMeter *][!Redraw]
 """]
     def tile(sec, img, i, group, over_extra, run, hidden, label=""):
         x = X0 + i * (T + GAP); y = Y0; d = (TS - T) // 2
@@ -976,7 +1003,7 @@ Y={Y0 + TS + 200}
 Shape=Rectangle 0,0,260,72,36 | Fill Color 255,255,255,245 | StrokeWidth 0
 Group=Games
 DynamicVariables=1
-MouseOverAction=[!SetOption Play Shape "Rectangle 0,0,260,72,36 | Fill Color 255,255,255,255 | StrokeWidth 4 | Stroke Color 90,170,255,255"][!UpdateMeter Play][!Redraw]
+MouseOverAction=[Play "#@#sounds\\move.wav"][!SetOption Play Shape "Rectangle 0,0,260,72,36 | Fill Color 255,255,255,255 | StrokeWidth 4 | Stroke Color 90,170,255,255"][!UpdateMeter Play][!Redraw]
 MouseLeaveAction=[!SetOption Play Shape "Rectangle 0,0,260,72,36 | Fill Color 255,255,255,245 | StrokeWidth 0"][!UpdateMeter Play][!Redraw]
 LeftMouseUpAction=["#Run#"][Play "#@#sounds\\select.wav"]
 

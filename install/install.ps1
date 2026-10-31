@@ -199,6 +199,11 @@ $skins = @(
     @("MarkizPS\Splash", "Splash.ini", 2, 1, 0, 0)
 )
 & $rmExe !RefreshApp; Start-Sleep 3
+# Рисовать через видеокарту: при наведении на плитки процессор грузится в разы меньше (включается после перезапуска Rainmeter)
+if (-not (Select-String -LiteralPath $ini -Pattern '^HardwareAcceleration=1' -Quiet)) {
+    & $rmExe !WriteKeyValue Rainmeter HardwareAcceleration 1 $ini; Start-Sleep 1
+    & $rmExe !Quit; Start-Sleep 3; Start-Process $rmExe; Start-Sleep 5
+}
 foreach ($s in $skins) {
     & $rmExe !WriteKeyValue $s[0] AlwaysOnTop $s[2] $ini
     & $rmExe !WriteKeyValue $s[0] ClickThrough $s[3] $ini
